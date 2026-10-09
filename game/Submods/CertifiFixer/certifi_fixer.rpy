@@ -1,3 +1,11 @@
+init -990 python:
+    certifi_fixer_submod = store.mas_submod_utils.Submod(
+        author="P",
+        name="CertifiFixer",
+        version="1.0.1",
+        description="Restores the bundled certifi package when MAS cannot import it."
+    )
+
 init -100 python:
     """
     CertifiFixer
@@ -10,12 +18,7 @@ init -100 python:
     import shutil
     import store
 
-    certifi_fixer_submod = store.mas_submod_utils.Submod(
-        author="P",
-        name="CertifiFixer",
-        version="1.0.0",
-        description="Restores the bundled certifi package when MAS cannot import it."
-    )
+
 
     def _certifi_fixer_replace_certifi():
         if store.mas_can_import.certifi():
