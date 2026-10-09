@@ -1,0 +1,86 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Read submod version
+        id: version
+        shell: bash
+        run: |
+          version=$(sed -nE 's/^[[:space:]]*version="([0-9]+\.[0-9]+\.[0-9]+)"[[:space:]]*,?[[:space:]]*$/\1/p' game/Submods/CertifiFixer/certifi_fixer.rpy)
+          if [ -z "$version" ] || [ "$(printf '%s\n' "$version" | wc -l)" -ne 1 ]; then
+            echo 'Expected exactly one semantic version in certifi_fixer.rpy' >&2
+            exit 1
+          fi
+          echo "value=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Check for existing release
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.value }}
+        run: |
+          if gh release view "$VERSION" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo 'exists=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'exists=false' >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create ZIP package
+        if: steps.release.outputs.exists == 'false'
+        env:
+          VERSION: ${{ steps.version.outputs.value }}
+        run: |
+          test -f game/Submods/CertifiFixer/certifi_fixer.rpy
+          test -f game/Submods/CertifiFixer/certifi/__init__.py
+          test -f game/Submods/CertifiFixer/certifi/core.py
+          test -f game/Submods/CertifiFixer/certifi/cacert.pem
+          zip -r "CertifiFixer-$VERSION.zip" game/Submods/CertifiFixer
+
+      - name: Create release notes
+        if: steps.release.outputs.exists == 'false'
+        env:
+          VERSION: ${{ steps.version.outputs.value }}
+        run: |
+          {
+            echo "## CertifiFixer $VERSION"
+            echo
+            git log -1 --pretty=%B
+          } > release_notes.md
+
+      - name: Publish release
+        if: steps.release.outputs.exists == 'false'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.value }}
+          body_path: release_notes.md
+          files: CertifiFixer-${{ steps.version.outputs.value }}.zip
+
+      - name: Upload release artifact
+        if: steps.release.outputs.exists == 'false'
+        uses: actions/upload-artifact@v4
+        with:
+          name: CertifiFixer-${{ steps.version.outputs.value }}
+          path: |
+            CertifiFixer-${{ steps.version.outputs.value }}.zip
+            release_notes.md
+          retention-days: 30
