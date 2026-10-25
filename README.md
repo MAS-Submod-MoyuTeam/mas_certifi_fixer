@@ -30,3 +30,12 @@ game/
 ## 发布
 
 推送到 `main` 或手动运行 GitHub Actions 的 `Release` workflow 时，流程会从 `certifi_fixer.rpy` 读取版本号，打包 `game/Submods/CertifiFixer/`，并在同版本 Release 尚不存在时发布 ZIP。
+
+## 证书更新
+
+`Update CA certificates` workflow 每天 UTC 03:17（北京时间 11:17）从 [certifi/python-certifi](https://github.com/certifi/python-certifi) 获取最新的 `cacert.pem`，与仓库中的文件逐字节比较：
+
+- 相同：不产生提交，直接结束。
+- 不同：覆盖 `game/Submods/CertifiFixer/certifi/cacert.pem`，将 `certifi_fixer.rpy` 中 `version` 的补丁号加一，提交并推送到 `main`，随后由 `Release` workflow 自动发布新版本。
+
+也可以手动触发（`workflow_dispatch`），或在本地运行 `python .github/scripts/update_cacert.py`（需要 Python 3.8+ 与网络访问）。脚本会校验下载内容是完整的 PEM 证书包，并在下载失败或本地版本号格式不符合预期时以非零状态退出。

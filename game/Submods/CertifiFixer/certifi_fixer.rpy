@@ -78,6 +78,6 @@ init -990 python:
     certifi_fixer_submod = store.mas_submod_utils.Submod(
         author="P",
         name="CertifiFixer",
-        version="1.0.2",
+        version="1.0.3",
         description="Restores the bundled certifi package when MAS cannot import it."
     )

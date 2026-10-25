@@ -1,0 +1,72 @@
+name: Update CA certificates
+
+on:
+  schedule:
+    # Every day at 03:17 UTC. Deliberately offset from the top of the hour so the
+    # run does not compete with cron-heavy jobs on GitHub's shared runners.
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-ca-certificates
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Run tests
+        run: python -m unittest discover -s tests
+
+      - name: Sync cacert.pem from certifi
+        id: sync
+        run: |
+          before=$(sed -nE 's/^[[:space:]]*version="([0-9]+\.[0-9]+\.[0-9]+)"[[:space:]]*,?[[:space:]]*$/\1/p' game/Submods/CertifiFixer/certifi_fixer.rpy)
+          python .github/scripts/update_cacert.py
+          if git diff --quiet -- game/Submods/CertifiFixer/certifi/cacert.pem; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            after=$(sed -nE 's/^[[:space:]]*version="([0-9]+\.[0-9]+\.[0-9]+)"[[:space:]]*,?[[:space:]]*$/\1/p' game/Submods/CertifiFixer/certifi_fixer.rpy)
+            if [ "$before" = "$after" ]; then
+              echo "Version was not bumped for a changed cacert.pem" >&2
+              exit 1
+            fi
+            certificates=$(grep -c -- '-----BEGIN CERTIFICATE-----' game/Submods/CertifiFixer/certifi/cacert.pem)
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "before=$before" >> "$GITHUB_OUTPUT"
+            echo "after=$after" >> "$GITHUB_OUTPUT"
+            echo "certificates=$certificates" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Re-run tests after update
+        if: steps.sync.outputs.changed == 'true'
+        run: python -m unittest discover -s tests
+
+      - name: Commit and push update
+        if: steps.sync.outputs.changed == 'true'
+        env:
+          BEFORE: ${{ steps.sync.outputs.before }}
+          AFTER: ${{ steps.sync.outputs.after }}
+          CERTIFICATES: ${{ steps.sync.outputs.certificates }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add game/Submods/CertifiFixer/certifi/cacert.pem game/Submods/CertifiFixer/certifi_fixer.rpy
+          git commit -F - <<EOF
+          chore(certifi): 同步 cacert.pem 到 $AFTER
+
+          - 从 certifi/python-certifi 获取最新的 cacert.pem（$CERTIFICATES 张证书）
+          - 补丁版本 $BEFORE -> $AFTER
+          EOF
+          git push origin HEAD:main
